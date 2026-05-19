@@ -132,7 +132,8 @@ header .badge{padding:4px 12px;border-radius:12px;font-size:12px;background:#e6f
 <script>
 const API = '/api';
 const TOKEN = 'KCsBcJiA36hFpT2l9oOHdrLWwc9Im4JC';
-function apiFetch(url, opts) { opts = opts || {}; opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {}); return fetch(url, opts); }
+async function apiFetch(url, opts) { opts = opts || {}; opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {}); const res = await fetch(url, opts); if (!res.ok) { let msg = res.status + ' ' + res.statusText; try { const d = await res.json(); if (d.error) msg = d.error; } catch (_) {} throw new Error(msg); } return res; }
+
 let currentMessage = null;
 let currentTab = 'editor';
 
@@ -147,14 +148,14 @@ function toast(msg, type='info') {
 async function checkConnection() {
   const badge = document.getElementById('statusBadge');
   try {
-    const res = await apiFetch(API+);
+    const res = await apiFetch(API+'/messages');
     if (res.ok) { badge.innerHTML = '<span class="status-dot connected"></span> 服务正常'; badge.style.background='#f6ffed'; badge.style.color='#52c41a'; }
     else throw new Error();
   } catch(e) { badge.textContent = '⚠ 连接失败'; badge.style.background='#fff2f0'; badge.style.color='#ff4d4f'; }
 }
 
 async function loadMessages() {
-  const res = await apiFetch(API+);
+  const res = await apiFetch(API+'/messages');
   const msgs = await res.json();
   const list = document.getElementById('messageList');
   if (!msgs.length) { list.innerHTML = '<div class="empty-state"><span class="emoji">📭</span><p>暂无消息，点击上方创建</p></div>'; return; }
@@ -182,7 +183,7 @@ async function createNewMessage() {
   const name = prompt('请输入消息名称（如：每日早安）：');
   if (!name) return;
   const res = await apiFetch(API+'/messages', {
-    method:'POST', headers:{},
+    method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ name, msgtype:'text', content:{text:''} })
   });
   currentMessage = await res.json();
@@ -195,7 +196,7 @@ async function saveMessage() {
   if (!currentMessage) return toast('请先选择消息','error');
   const data = collectFormData();
   const res = await apiFetch(API+'/messages/'+currentMessage.id, {
-    method:'PUT', headers:{},
+    method:'PUT', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ name: data.name, msgtype: data.msgtype, content: data.content })
   });
   currentMessage = await res.json();
@@ -353,8 +354,8 @@ function updatePreview() {
     pc.innerHTML = html || '<span style="color:#ccc">图文预览</span>';
   } else if (msgtype === 'image') {
     const b64 = document.getElementById('imgBase64')?.value || '';
-    if (b64) pc.innerHTML = `<div style="font-size:12px;color:#999;margin-bottom:8px">Base64 长度: ${b64.length} 字符</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px" onerror="this.style.display='none'">`;
-    else pc.innerHTML = '<span style="color:#ccc">图片预览（请上传本地图片或填入 Base64）</span>';
+    if (b64) pc.innerHTML = `<div style="font-size:12px;color:#999;margin-bottom:8px">Base64 长度: ${b64.length} 字符</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div style="display:none;color:#ff4d4f;font-size:12px">图片无法预览</div>`;
+    else pc.innerHTML = '<span style="color:#ccc">图片预览（需填入 Base64）</span>';
   }
 }
 
@@ -384,11 +385,11 @@ function formatDateTime(iso) {
   return d.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 function getStatusText(s) {
-  if (s.sent) return '✔ 已发送';
-  if (!s.enabled) return '⏸ 已停用';
+  if (s.sent) return '\u2714 已发送';
+  if (!s.enabled) return '\u23f8 已停用';
   const d = new Date(s.scheduled_at);
-  if (d <= new Date()) return '⏳ 待发送';
-  return '⌛ 等待中';
+  if (d <= new Date()) return '\u23f3 待发送';
+  return '\u231b 等待中';
 }
 
 function showScheduleModal() {
@@ -402,13 +403,13 @@ function showScheduleModal() {
   const h = String(now.getHours()).padStart(2,'0');
   const min = String(now.getMinutes()).padStart(2,'0');
   overlay.innerHTML = `<div class="modal" style="max-width:420px">
-    <h3>⏰ 添加定时推送</h3>
+    <h3>\u23f0 添加定时推送</h3>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <div class="form-group" style="flex:1;min-width:60px"><label>年</label><input id="schedYear" type="number" min="${y}" max="${y+5}" value="${y}"></div>
-      <div class="form-group" style="flex:1;min-width:60px"><label>月</label><input id="schedMonth" type="number" min="1" max="12" value="${m}"></div>
-      <div class="form-group" style="flex:1;min-width:60px"><label>日</label><input id="schedDay" type="number" min="1" max="31" value="${d}"></div>
-      <div class="form-group" style="flex:1;min-width:60px"><label>时</label><input id="schedHour" type="number" min="0" max="23" value="${h}"></div>
-      <div class="form-group" style="flex:1;min-width:60px"><label>分</label><input id="schedMin" type="number" min="0" max="59" value="${min}"></div>
+      <div class="form-group" style="flex:1;min-width:60px"><label>年</label><input id="schedYear" type="number" min="\x24{y}" max="\x24{y+5}" value="\x24{y}"></div>
+      <div class="form-group" style="flex:1;min-width:60px"><label>月</label><input id="schedMonth" type="number" min="1" max="12" value="\x24{m}"></div>
+      <div class="form-group" style="flex:1;min-width:60px"><label>日</label><input id="schedDay" type="number" min="1" max="31" value="\x24{d}"></div>
+      <div class="form-group" style="flex:1;min-width:60px"><label>时</label><input id="schedHour" type="number" min="0" max="23" value="\x24{h}"></div>
+      <div class="form-group" style="flex:1;min-width:60px"><label>分</label><input id="schedMin" type="number" min="0" max="59" value="\x24{min}"></div>
     </div>
     <p style="font-size:11px;color:#999;margin-top:4px">默认为当前时间，可自行修改</p>
     <div class="actions">
@@ -429,7 +430,7 @@ function showScheduleModal() {
     if (dt <= new Date()) return toast('必须是未来时间','error');
     try {
       const res = await apiFetch(API+'/messages/'+currentMessage.id+'/schedules', {
-        method:'POST', headers:{},
+        method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ scheduled_at: dt.toISOString() })
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
@@ -443,7 +444,7 @@ function showScheduleModal() {
 
 async function toggleSchedule(id, enabled) {
   await apiFetch(API+'/schedules/'+id, {
-    method:'PUT', headers:{},
+    method:'PUT', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ enabled })
   });
   loadSchedules();
@@ -458,7 +459,7 @@ async function deleteSchedule(id) {
 }
 
 async function showLogs() {
-  const res = await apiFetch(API+);
+  const res = await apiFetch(API+'/logs');
   const logs = await res.json();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -485,7 +486,6 @@ function handleImageFile(input) {
   reader.onload = function(e) {
     const base64 = e.target.result.split(',')[1];
     document.getElementById('imgBase64').value = base64;
-    // Auto-calculate MD5 placeholder
     document.getElementById('imgMd5').value = '';
     updatePreview();
     toast('图片已转换为 Base64','success');
@@ -493,6 +493,10 @@ function handleImageFile(input) {
   reader.readAsDataURL(file);
 }
 
+window.addEventListener('unhandledrejection', function(e) {
+  toast('请求失败: ' + (e.reason?.message || '未知错误'), 'error');
+  console.error(e.reason);
+});
 // Init
 setInterval(updatePreview, 1000); // keep preview live
 checkConnection();

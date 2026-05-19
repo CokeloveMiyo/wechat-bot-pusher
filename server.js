@@ -1,4 +1,4 @@
-try { require("dotenv").config(); } catch (_) {}
+try { require("dotenv").config(); } catch (e) { console.warn("dotenv not loaded:", e.message); }
 const express = require("express");
 const Database = require("better-sqlite3");
 const axios = require("axios");
