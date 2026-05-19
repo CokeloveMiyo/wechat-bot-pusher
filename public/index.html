@@ -1,0 +1,470 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>企业微信消息推送工具</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#f0f2f5;--card:#fff;--primary:#1890ff;--danger:#ff4d4f;--success:#52c41a;--warning:#faad14;--text:#333;--text2:#666;--border:#e8e8e8;--radius:8px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+header{background:#fff;border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+header h1{font-size:18px;font-weight:600;color:var(--text)}
+header .badge{padding:4px 12px;border-radius:12px;font-size:12px;background:#e6f7ff;color:var(--primary)}
+.layout{display:flex;height:calc(100vh - 57px)}
+.sidebar{width:280px;background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-header{padding:16px;border-bottom:1px solid var(--border)}
+.sidebar-header h2{font-size:14px;margin-bottom:10px;color:var(--text2)}
+.sidebar-list{flex:1;overflow-y:auto;padding:8px}
+.sidebar-item{padding:12px;margin-bottom:6px;border-radius:var(--radius);cursor:pointer;border:1px solid transparent;transition:all .15s;display:flex;align-items:center;gap:8px}
+.sidebar-item:hover{border-color:var(--primary);background:#f0f7ff}
+.sidebar-item.active{border-color:var(--primary);background:#e6f7ff}
+.sidebar-item .icon{font-size:20px;flex-shrink:0}
+.sidebar-item .info{flex:1;min-width:0}
+.sidebar-item .info .name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-item .info .type{font-size:11px;color:var(--text2)}
+.sidebar-item .del-btn{opacity:0;background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:2px 4px;border-radius:4px}
+.sidebar-item:hover .del-btn{opacity:1}
+.sidebar-item .del-btn:hover{background:#fff1f0}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.main-toolbar{padding:12px 24px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.main-content{flex:1;overflow-y:auto;padding:24px;display:flex;gap:24px}
+.editor-panel{flex:1;min-width:0}
+.preview-panel{flex:1;min-width:0;background:#fff;border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column}
+.preview-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;color:var(--text2)}
+.preview-body{flex:1;padding:16px;overflow-y:auto;background:#f5f5f5;display:flex;align-items:flex-start}
+.preview-phone{width:100%;max-width:360px;background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden;margin:0 auto}
+.preview-phone .phone-header{padding:10px 14px;background:#fafafa;font-size:12px;color:var(--text2);border-bottom:1px solid #eee}
+.preview-phone .phone-body{padding:14px}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:var(--text2)}
+.empty-state .emoji{font-size:48px;margin-bottom:16px}
+.empty-state p{font-size:14px}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:13px;font-weight:500;margin-bottom:6px;color:var(--text)}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;outline:none;transition:border .15s}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(24,144,255,.1)}
+.form-group textarea{resize:vertical;min-height:80px;font-family:monospace}
+.btn{padding:8px 16px;border:none;border-radius:var(--radius);font-size:13px;cursor:pointer;font-weight:500;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:#40a9ff}
+.btn-success{background:var(--success);color:#fff}
+.btn-success:hover{background:#73d13d}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover{background:#ff7875}
+.btn-default{background:#fff;color:var(--text);border:1px solid var(--border)}
+.btn-default:hover{border-color:var(--primary);color:var(--primary)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px}
+.tag-text{background:#e6f7ff;color:#1890ff}
+.tag-markdown{background:#f6ffed;color:#52c41a}
+.tag-news{background:#fff7e6;color:#fa8c16}
+.tag-image{background:#f9f0ff;color:#722ed1}
+.card{background:#fff;border-radius:var(--radius);border:1px solid var(--border);padding:16px;margin-bottom:16px}
+.card h3{font-size:14px;margin-bottom:12px}
+.article-item{display:flex;gap:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;position:relative}
+.article-item .remove-article{position:absolute;top:6px;right:6px;background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px}
+.article-item img{width:80px;height:80px;object-fit:cover;border-radius:4px;background:#f5f5f5}
+.article-item .article-fields{flex:1;min-width:0}
+.article-item .article-fields input{margin-bottom:6px}
+.schedule-row{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fafafa;border-radius:var(--radius);margin-bottom:8px;font-size:13px}
+.schedule-row .cron-text{font-family:monospace;font-size:12px;color:var(--primary)}
+.schedule-row .enabled-dot{width:8px;height:8px;border-radius:50%}
+.schedule-row .enabled-dot.on{background:var(--success)}
+.schedule-row .enabled-dot.off{background:#d9d9d9}
+.cron-presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.cron-preset{padding:4px 10px;border-radius:12px;font-size:11px;background:#f0f5ff;color:var(--primary);cursor:pointer;border:1px solid transparent;transition:all .15s}
+.cron-preset:hover{border-color:var(--primary)}
+.log-item{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:10px}
+.log-item .log-status{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.log-item .log-status.ok{background:var(--success)}
+.log-item .log-status.err{background:var(--danger)}
+.log-item .log-time{color:var(--text2);white-space:nowrap}
+.log-item .log-name{font-weight:500}
+.tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tab{padding:8px 16px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent;transition:all .15s;color:var(--text2)}
+.tab:hover{color:var(--primary)}
+.tab.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:500}
+.toast{position:fixed;top:16px;right:16px;padding:12px 20px;border-radius:var(--radius);color:#fff;font-size:13px;z-index:999;animation:slideIn .3s ease;box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.toast.success{background:var(--success)}
+.toast.error{background:var(--danger)}
+.toast.info{background:var(--primary)}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:flex;align-items:center;justify-content:center}
+.modal{background:#fff;border-radius:12px;padding:24px;width:90%;max-width:500px;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+.modal h3{font-size:16px;margin-bottom:16px}
+.modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.status-dot.connected{background:var(--success)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🤖 企业微信消息推送工具</h1>
+  <span class="badge" id="statusBadge">⏳ 检测连接...</span>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>📋 消息列表</h2>
+      <button class="btn btn-primary btn-sm" onclick="createNewMessage()" style="width:100%;justify-content:center">+ 新建消息</button>
+    </div>
+    <div class="sidebar-list" id="messageList">
+      <div class="empty-state"><span class="emoji">📭</span><p>暂无消息，点击上方创建</p></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="main-toolbar">
+      <button class="btn btn-success btn-sm" onclick="sendNow()" id="btnSend">🚀 立即发送</button>
+      <button class="btn btn-primary btn-sm" onclick="saveMessage()">💾 保存</button>
+      <button class="btn btn-default btn-sm" onclick="showScheduleModal()">⏰ 定时推送</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-default btn-sm" onclick="showLogs()">📜 发送日志</button>
+    </div>
+    <div class="main-content" id="mainContent">
+      <div class="empty-state"><span class="emoji">👈</span><p>选择一个消息或新建消息开始编辑</p></div>
+    </div>
+  </main>
+</div>
+
+<script>
+const API = '/api';
+let currentMessage = null;
+let currentTab = 'editor';
+
+function toast(msg, type='info') {
+  const t = document.createElement('div');
+  t.className = 'toast '+type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+async function checkConnection() {
+  const badge = document.getElementById('statusBadge');
+  try {
+    const res = await fetch(API+'/messages');
+    if (res.ok) { badge.innerHTML = '<span class="status-dot connected"></span> 服务正常'; badge.style.background='#f6ffed'; badge.style.color='#52c41a'; }
+    else throw new Error();
+  } catch(e) { badge.textContent = '⚠ 连接失败'; badge.style.background='#fff2f0'; badge.style.color='#ff4d4f'; }
+}
+
+async function loadMessages() {
+  const res = await fetch(API+'/messages');
+  const msgs = await res.json();
+  const list = document.getElementById('messageList');
+  if (!msgs.length) { list.innerHTML = '<div class="empty-state"><span class="emoji">📭</span><p>暂无消息，点击上方创建</p></div>'; return; }
+  list.innerHTML = msgs.map(m => {
+    const icon = {text:'💬',markdown:'📝',news:'📰',image:'🖼️'}[m.msgtype]||'📄';
+    const tagClass = 'tag tag-'+m.msgtype;
+    return `<div class="sidebar-item${currentMessage&&currentMessage.id===m.id?' active':''}" onclick="selectMessage(${m.id})">
+      <span class="icon">${icon}</span>
+      <div class="info"><div class="name">${escHtml(m.name)}</div><div class="type"><span class="${tagClass}">${m.msgtype}</span></div></div>
+      <button class="del-btn" onclick="event.stopPropagation();deleteMessage(${m.id})" title="删除">×</button>
+    </div>`;
+  }).join('');
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function selectMessage(id) {
+  const res = await fetch(API+'/messages/'+id);
+  currentMessage = await res.json();
+  await loadMessages();
+  renderEditor();
+}
+
+async function createNewMessage() {
+  const name = prompt('请输入消息名称（如：每日早安）：');
+  if (!name) return;
+  const res = await fetch(API+'/messages', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name, msgtype:'text', content:{text:''} })
+  });
+  currentMessage = await res.json();
+  await loadMessages();
+  renderEditor();
+  toast('消息已创建','success');
+}
+
+async function saveMessage() {
+  if (!currentMessage) return toast('请先选择消息','error');
+  const data = collectFormData();
+  const res = await fetch(API+'/messages/'+currentMessage.id, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name: data.name, msgtype: data.msgtype, content: data.content })
+  });
+  currentMessage = await res.json();
+  await loadMessages();
+  toast('保存成功','success');
+}
+
+function collectFormData() {
+  const name = document.getElementById('msgName')?.value || currentMessage.name;
+  const msgtype = document.getElementById('msgType')?.value || currentMessage.msgtype;
+  let content = {};
+  if (msgtype === 'text') {
+    content.text = document.getElementById('textContent')?.value || '';
+  } else if (msgtype === 'markdown') {
+    content.markdown = document.getElementById('mdContent')?.value || '';
+  } else if (msgtype === 'news') {
+    content.articles = [];
+    document.querySelectorAll('.article-item').forEach(item => {
+      content.articles.push({
+        title: item.querySelector('.art-title')?.value || '',
+        description: item.querySelector('.art-desc')?.value || '',
+        url: item.querySelector('.art-url')?.value || '',
+        picurl: item.querySelector('.art-pic')?.value || ''
+      });
+    });
+  } else if (msgtype === 'image') {
+    content.base64 = document.getElementById('imgBase64')?.value || '';
+    content.md5 = document.getElementById('imgMd5')?.value || '';
+  }
+  return { name, msgtype, content };
+}
+
+async function deleteMessage(id) {
+  if (!confirm('确定删除此消息及关联的定时任务？')) return;
+  await fetch(API+'/messages/'+id, { method:'DELETE' });
+  if (currentMessage && currentMessage.id === id) { currentMessage = null; renderEmpty(); }
+  await loadMessages();
+  toast('已删除','success');
+}
+
+async function sendNow() {
+  if (!currentMessage) return toast('请先选择消息','error');
+  await saveMessage();
+  const btn = document.getElementById('btnSend');
+  btn.disabled = true; btn.textContent = '发送中...';
+  try {
+    const res = await fetch(API+'/messages/'+currentMessage.id+'/send', { method:'POST' });
+    const data = await res.json();
+    if (data.success) toast('发送成功！','success');
+    else toast('发送失败: '+(data.error||'未知错误'),'error');
+  } catch(e) { toast('请求失败: '+e.message,'error'); }
+  btn.disabled = false; btn.textContent = '🚀 立即发送';
+}
+
+function renderEmpty() {
+  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><span class="emoji">👈</span><p>选择一个消息或新建消息开始编辑</p></div>';
+}
+
+function renderEditor() {
+  if (!currentMessage) return renderEmpty();
+  const m = currentMessage;
+  const content = typeof m.content === 'string' ? JSON.parse(m.content) : (m.content||{});
+  const mc = document.getElementById('mainContent');
+
+  let typeFields = '';
+  if (m.msgtype === 'text') {
+    typeFields = `<div class="form-group"><label>文本内容</label><textarea id="textContent" rows="4" placeholder="输入要发送的文本...">${escHtml(content.text||'')}</textarea></div>`;
+  } else if (m.msgtype === 'markdown') {
+    typeFields = `<div class="form-group"><label>Markdown 内容</label><textarea id="mdContent" rows="6" placeholder="支持企业微信 Markdown 语法...">${escHtml(content.markdown||'')}</textarea></div>`;
+  } else if (m.msgtype === 'news') {
+    const articles = content.articles || [{title:'',description:'',url:'',picurl:''}];
+    typeFields = `<div class="form-group"><label>图文消息</label><div id="articlesContainer">${articles.map((a,i)=>
+      `<div class="article-item">
+        <button class="remove-article" onclick="this.parentElement.remove();updatePreview()">×</button>
+        ${a.picurl ? `<img src="${escHtml(a.picurl)}" onerror="this.style.display='none'" alt="">` : ''}
+        <div class="article-fields">
+          <input class="art-title" placeholder="标题" value="${escHtml(a.title||'')}" oninput="updatePreview()">
+          <input class="art-desc" placeholder="描述（可选）" value="${escHtml(a.description||'')}" oninput="updatePreview()">
+          <input class="art-url" placeholder="链接 URL" value="${escHtml(a.url||'')}" oninput="updatePreview()">
+          <input class="art-pic" placeholder="图片 URL（可选）" value="${escHtml(a.picurl||'')}" oninput="updatePreview()">
+        </div>
+      </div>`
+    ).join('')}</div><button class="btn btn-default btn-sm" onclick="addArticle();updatePreview()">+ 添加图文</button></div>`;
+  } else if (m.msgtype === 'image') {
+    typeFields = `<div class="form-group"><label>Base64 图片数据</label><textarea id="imgBase64" rows="3" placeholder="图片的 Base64 编码...">${escHtml(content.base64||'')}</textarea></div><div class="form-group"><label>MD5 校验值</label><input id="imgMd5" placeholder="图片 MD5" value="${escHtml(content.md5||'')}"></div>`;
+  }
+
+  mc.innerHTML = `
+    <div class="editor-panel">
+      <div class="card">
+        <div class="form-group"><label>消息名称</label><input id="msgName" value="${escHtml(m.name)}" placeholder="消息名称"></div>
+        <div class="form-group"><label>消息类型</label>
+          <select id="msgType" onchange="changeMsgType(this.value)">
+            <option value="text" ${m.msgtype==='text'?'selected':''}>💬 文本消息</option>
+            <option value="markdown" ${m.msgtype==='markdown'?'selected':''}>📝 Markdown 消息</option>
+            <option value="news" ${m.msgtype==='news'?'selected':''}>📰 图文消息</option>
+            <option value="image" ${m.msgtype==='image'?'selected':''}>🖼️ 图片消息</option>
+          </select>
+        </div>
+      </div>
+      <div class="card"><h3>📝 内容编辑</h3>${typeFields}</div>
+      <div class="card" id="scheduleCard"><h3>⏰ 定时推送</h3><div id="scheduleList">加载中...</div></div>
+    </div>
+    <div class="preview-panel">
+      <div class="preview-header">👁 实时预览</div>
+      <div class="preview-body"><div class="preview-phone"><div class="phone-header">🤖 企业微信机器人</div><div class="phone-body" id="previewContent"></div></div></div>
+    </div>`;
+  updatePreview();
+  loadSchedules();
+}
+
+function changeMsgType(type) {
+  currentMessage.msgtype = type;
+  currentMessage.content = '{}';
+  renderEditor();
+}
+
+function addArticle() {
+  const container = document.getElementById('articlesContainer');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = 'article-item';
+  div.innerHTML = `<button class="remove-article" onclick="this.parentElement.remove();updatePreview()">×</button>
+    <div class="article-fields">
+      <input class="art-title" placeholder="标题" oninput="updatePreview()">
+      <input class="art-desc" placeholder="描述（可选）" oninput="updatePreview()">
+      <input class="art-url" placeholder="链接 URL" oninput="updatePreview()">
+      <input class="art-pic" placeholder="图片 URL（可选）" oninput="updatePreview()">
+    </div>`;
+  container.appendChild(div);
+}
+
+function updatePreview() {
+  const pc = document.getElementById('previewContent');
+  if (!pc) return;
+  const msgtype = document.getElementById('msgType')?.value || currentMessage?.msgtype;
+  if (msgtype === 'text') {
+    const txt = document.getElementById('textContent')?.value || '';
+    pc.innerHTML = `<div style="background:#e6f7ff;padding:10px 14px;border-radius:8px;font-size:14px;white-space:pre-wrap;word-break:break-word">${escHtml(txt) || '<span style="color:#ccc">文本内容预览</span>'}</div>`;
+  } else if (msgtype === 'markdown') {
+    const md = document.getElementById('mdContent')?.value || '';
+    pc.innerHTML = `<div style="background:#f6ffed;padding:10px 14px;border-radius:8px;font-size:14px;white-space:pre-wrap;word-break:break-word;font-family:monospace">${escHtml(md) || '<span style="color:#ccc">Markdown 内容预览</span>'}</div>`;
+  } else if (msgtype === 'news') {
+    let html = '';
+    document.querySelectorAll('.article-item').forEach(item => {
+      const title = item.querySelector('.art-title')?.value || '';
+      const desc = item.querySelector('.art-desc')?.value || '';
+      const url = item.querySelector('.art-url')?.value || '#';
+      const pic = item.querySelector('.art-pic')?.value || '';
+      html += `<a href="${escHtml(url)}" target="_blank" style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #eee;text-decoration:none;color:inherit;align-items:flex-start">
+        ${pic?`<img src="${escHtml(pic)}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display='none'">`:''}
+        <div style="min-width:0"><div style="font-size:14px;font-weight:500;margin-bottom:4px">${escHtml(title)||'未命名'}</div><div style="font-size:12px;color:#999">${escHtml(desc)}</div></div>
+      </a>`;
+    });
+    pc.innerHTML = html || '<span style="color:#ccc">图文预览</span>';
+  } else if (msgtype === 'image') {
+    const b64 = document.getElementById('imgBase64')?.value || '';
+    if (b64) pc.innerHTML = `<div style="font-size:12px;color:#999;margin-bottom:8px">Base64 长度: ${b64.length} 字符</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div style="display:none;color:#ff4d4f;font-size:12px">图片无法预览</div>`;
+    else pc.innerHTML = '<span style="color:#ccc">图片预览（需填入 Base64）</span>';
+  }
+}
+
+async function loadSchedules() {
+  if (!currentMessage) return;
+  const sl = document.getElementById('scheduleList');
+  if (!sl) return;
+  const res = await fetch(API+'/messages/'+currentMessage.id+'/schedules');
+  const schedules = await res.json();
+  if (!schedules.length) { sl.innerHTML = '<span style="color:#999;font-size:13px">暂无定时任务，点击上方"定时推送"添加</span>'; return; }
+  sl.innerHTML = schedules.map(s => `
+    <div class="schedule-row">
+      <span class="enabled-dot ${s.enabled?'on':'off'}"></span>
+      <span class="cron-text">${escHtml(s.cron_expression)}</span>
+      <span style="font-size:11px;color:#999">${describeCron(s.cron_expression)}</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-default btn-sm" onclick="toggleSchedule(${s.id},${s.enabled?0:1})">${s.enabled?'停用':'启用'}</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteSchedule(${s.id})">删除</button>
+    </div>
+  `).join('');
+}
+
+function describeCron(expr) {
+  const parts = expr.split(' ');
+  if (parts.length < 5) return expr;
+  const [min, hour, dom, month, dow] = parts;
+  if (dow !== '*') return `每周${['日','一','二','三','四','五','六'][parseInt(dow)]||dow} ${hour}:${min}`;
+  if (dom !== '*') return `每月${dom}日 ${hour}:${min}`;
+  return `每天 ${hour}:${min}`;
+}
+
+function showScheduleModal() {
+  if (!currentMessage) return toast('请先选择消息','error');
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <h3>⏰ 添加定时推送</h3>
+    <div class="form-group"><label>Cron 表达式</label><input id="cronInput" placeholder="如: 0 9 * * * (每天9点)"></div>
+    <div class="cron-presets">
+      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 8 * * *'">每天早上 8:00</span>
+      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 9 * * *'">每天早上 9:00</span>
+      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 12 * * *'">每天中午 12:00</span>
+      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 18 * * *'">每天下午 18:00</span>
+      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 9 * * 1'">每周一 9:00</span>
+      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 9 * * 5'">每周五 9:00</span>
+      <span class="cron-preset" onclick="document.getElementById('cronInput').value='*/30 * * * *'">每30分钟</span>
+      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 * * * *'">每小时整点</span>
+    </div>
+    <p style="font-size:11px;color:#999;margin-top:8px">格式: 分 时 日 月 周 (如 0 9 * * 1-5 = 工作日早9点)</p>
+    <div class="actions">
+      <button class="btn btn-default" onclick="this.closest('.modal-overlay').remove()">取消</button>
+      <button class="btn btn-primary" id="btnAddSchedule">确认添加</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('btnAddSchedule').onclick = async () => {
+    const expr = document.getElementById('cronInput').value.trim();
+    if (!expr) return toast('请输入 Cron 表达式','error');
+    try {
+      const res = await fetch(API+'/messages/'+currentMessage.id+'/schedules', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ cron_expression: expr })
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      overlay.remove();
+      toast('定时任务已添加','success');
+      loadSchedules();
+    } catch(e) { toast('添加失败: '+e.message,'error'); }
+  };
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function toggleSchedule(id, enabled) {
+  await fetch(API+'/schedules/'+id, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ enabled })
+  });
+  loadSchedules();
+  toast(enabled ? '已启用' : '已停用', 'info');
+}
+
+async function deleteSchedule(id) {
+  if (!confirm('确定删除此定时任务？')) return;
+  await fetch(API+'/schedules/'+id, { method:'DELETE' });
+  loadSchedules();
+  toast('定时任务已删除','success');
+}
+
+async function showLogs() {
+  const res = await fetch(API+'/logs');
+  const logs = await res.json();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="max-width:600px"><h3>📜 发送日志</h3>
+    <div style="max-height:400px;overflow-y:auto">${logs.length ? logs.map(l => `
+      <div class="log-item">
+        <span class="log-status ${l.status==='success'?'ok':'err'}"></span>
+        <span class="log-time">${new Date(l.sent_at+'Z').toLocaleString('zh-CN')}</span>
+        <span class="log-name">${escHtml(l.message_name||'已删除')}</span>
+        <span style="flex:1"></span>
+        <span style="color:${l.status==='success'?'#52c41a':'#ff4d4f'}">${l.status==='success'?'✓':'✗'}</span>
+      </div>`).join('') : '<p style="color:#999;text-align:center;padding:20px">暂无发送记录</p>'}</div>
+    <div class="actions"><button class="btn btn-default" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// Init
+setInterval(updatePreview, 1000); // keep preview live
+checkConnection();
+loadMessages();
+</script>
+</body>
+</html>
