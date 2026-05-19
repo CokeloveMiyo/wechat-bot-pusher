@@ -131,6 +131,8 @@ header .badge{padding:4px 12px;border-radius:12px;font-size:12px;background:#e6f
 
 <script>
 const API = '/api';
+const TOKEN = 'KCsBcJiA36hFpT2l9oOHdrLWwc9Im4JC';
+function apiFetch(url, opts) { opts = opts || {}; opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {}); return fetch(url, opts); }
 let currentMessage = null;
 let currentTab = 'editor';
 
@@ -145,14 +147,14 @@ function toast(msg, type='info') {
 async function checkConnection() {
   const badge = document.getElementById('statusBadge');
   try {
-    const res = await fetch(API+'/messages');
+    const res = await apiFetch(API+);
     if (res.ok) { badge.innerHTML = '<span class="status-dot connected"></span> 服务正常'; badge.style.background='#f6ffed'; badge.style.color='#52c41a'; }
     else throw new Error();
   } catch(e) { badge.textContent = '⚠ 连接失败'; badge.style.background='#fff2f0'; badge.style.color='#ff4d4f'; }
 }
 
 async function loadMessages() {
-  const res = await fetch(API+'/messages');
+  const res = await apiFetch(API+);
   const msgs = await res.json();
   const list = document.getElementById('messageList');
   if (!msgs.length) { list.innerHTML = '<div class="empty-state"><span class="emoji">📭</span><p>暂无消息，点击上方创建</p></div>'; return; }
@@ -170,7 +172,7 @@ async function loadMessages() {
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 async function selectMessage(id) {
-  const res = await fetch(API+'/messages/'+id);
+  const res = await apiFetch(API+'/messages/'+id);
   currentMessage = await res.json();
   await loadMessages();
   renderEditor();
@@ -179,8 +181,8 @@ async function selectMessage(id) {
 async function createNewMessage() {
   const name = prompt('请输入消息名称（如：每日早安）：');
   if (!name) return;
-  const res = await fetch(API+'/messages', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+  const res = await apiFetch(API+'/messages', {
+    method:'POST', headers:{},
     body: JSON.stringify({ name, msgtype:'text', content:{text:''} })
   });
   currentMessage = await res.json();
@@ -192,8 +194,8 @@ async function createNewMessage() {
 async function saveMessage() {
   if (!currentMessage) return toast('请先选择消息','error');
   const data = collectFormData();
-  const res = await fetch(API+'/messages/'+currentMessage.id, {
-    method:'PUT', headers:{'Content-Type':'application/json'},
+  const res = await apiFetch(API+'/messages/'+currentMessage.id, {
+    method:'PUT', headers:{},
     body: JSON.stringify({ name: data.name, msgtype: data.msgtype, content: data.content })
   });
   currentMessage = await res.json();
@@ -228,7 +230,7 @@ function collectFormData() {
 
 async function deleteMessage(id) {
   if (!confirm('确定删除此消息及关联的定时任务？')) return;
-  await fetch(API+'/messages/'+id, { method:'DELETE' });
+  await apiFetch(API+'/messages/'+id, { method:'DELETE' });
   if (currentMessage && currentMessage.id === id) { currentMessage = null; renderEmpty(); }
   await loadMessages();
   toast('已删除','success');
@@ -240,7 +242,7 @@ async function sendNow() {
   const btn = document.getElementById('btnSend');
   btn.disabled = true; btn.textContent = '发送中...';
   try {
-    const res = await fetch(API+'/messages/'+currentMessage.id+'/send', { method:'POST' });
+    const res = await apiFetch(API+'/messages/'+currentMessage.id+'/send', { method:'POST' });
     const data = await res.json();
     if (data.success) toast('发送成功！','success');
     else toast('发送失败: '+(data.error||'未知错误'),'error');
@@ -278,7 +280,7 @@ function renderEditor() {
       </div>`
     ).join('')}</div><button class="btn btn-default btn-sm" onclick="addArticle();updatePreview()">+ 添加图文</button></div>`;
   } else if (m.msgtype === 'image') {
-    typeFields = `<div class="form-group"><label>Base64 图片数据</label><textarea id="imgBase64" rows="3" placeholder="图片的 Base64 编码...">${escHtml(content.base64||'')}</textarea></div><div class="form-group"><label>MD5 校验值</label><input id="imgMd5" placeholder="图片 MD5" value="${escHtml(content.md5||'')}"></div>`;
+    typeFields = `<div class="form-group"><label>上传本地图片</label><input type="file" id="imgFile" accept="image/*" onchange="handleImageFile(this)" style="margin-bottom:8px"><br><small style="color:#999">选择后自动转 Base64</small></div><div class="form-group"><label>Base64 图片数据</label><textarea id="imgBase64" rows="3" placeholder="图片的 Base64 编码..." readonly>${escHtml(content.base64||'')}</textarea></div><div class="form-group"><label>MD5 校验值</label><input id="imgMd5" placeholder="图片 MD5" value="${escHtml(content.md5||'')}"></div>`;
   }
 
   mc.innerHTML = `
@@ -351,8 +353,8 @@ function updatePreview() {
     pc.innerHTML = html || '<span style="color:#ccc">图文预览</span>';
   } else if (msgtype === 'image') {
     const b64 = document.getElementById('imgBase64')?.value || '';
-    if (b64) pc.innerHTML = `<div style="font-size:12px;color:#999;margin-bottom:8px">Base64 长度: ${b64.length} 字符</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div style="display:none;color:#ff4d4f;font-size:12px">图片无法预览</div>`;
-    else pc.innerHTML = '<span style="color:#ccc">图片预览（需填入 Base64）</span>';
+    if (b64) pc.innerHTML = `<div style="font-size:12px;color:#999;margin-bottom:8px">Base64 长度: ${b64.length} 字符</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px" onerror="this.style.display='none'">`;
+    else pc.innerHTML = '<span style="color:#ccc">图片预览（请上传本地图片或填入 Base64）</span>';
   }
 }
 
@@ -360,14 +362,14 @@ async function loadSchedules() {
   if (!currentMessage) return;
   const sl = document.getElementById('scheduleList');
   if (!sl) return;
-  const res = await fetch(API+'/messages/'+currentMessage.id+'/schedules');
+  const res = await apiFetch(API+'/messages/'+currentMessage.id+'/schedules');
   const schedules = await res.json();
   if (!schedules.length) { sl.innerHTML = '<span style="color:#999;font-size:13px">暂无定时任务，点击上方"定时推送"添加</span>'; return; }
   sl.innerHTML = schedules.map(s => `
     <div class="schedule-row">
       <span class="enabled-dot ${s.enabled?'on':'off'}"></span>
-      <span class="cron-text">${escHtml(s.cron_expression)}</span>
-      <span style="font-size:11px;color:#999">${describeCron(s.cron_expression)}</span>
+      <span class="cron-text">${formatDateTime(s.scheduled_at)}</span>
+      <span style="font-size:11px;color:#999">${getStatusText(s)}</span>
       <span style="flex:1"></span>
       <button class="btn btn-default btn-sm" onclick="toggleSchedule(${s.id},${s.enabled?0:1})">${s.enabled?'停用':'启用'}</button>
       <button class="btn btn-danger btn-sm" onclick="deleteSchedule(${s.id})">删除</button>
@@ -375,33 +377,40 @@ async function loadSchedules() {
   `).join('');
 }
 
-function describeCron(expr) {
-  const parts = expr.split(' ');
-  if (parts.length < 5) return expr;
-  const [min, hour, dom, month, dow] = parts;
-  if (dow !== '*') return `每周${['日','一','二','三','四','五','六'][parseInt(dow)]||dow} ${hour}:${min}`;
-  if (dom !== '*') return `每月${dom}日 ${hour}:${min}`;
-  return `每天 ${hour}:${min}`;
+function formatDateTime(iso) {
+  if (!iso) return '未设置';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+function getStatusText(s) {
+  if (s.sent) return '✔ 已发送';
+  if (!s.enabled) return '⏸ 已停用';
+  const d = new Date(s.scheduled_at);
+  if (d <= new Date()) return '⏳ 待发送';
+  return '⌛ 等待中';
 }
 
 function showScheduleModal() {
   if (!currentMessage) return toast('请先选择消息','error');
+  const now = new Date();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
-  overlay.innerHTML = `<div class="modal">
+  const y = now.getFullYear();
+  const m = String(now.getMonth()+1).padStart(2,'0');
+  const d = String(now.getDate()).padStart(2,'0');
+  const h = String(now.getHours()).padStart(2,'0');
+  const min = String(now.getMinutes()).padStart(2,'0');
+  overlay.innerHTML = `<div class="modal" style="max-width:420px">
     <h3>⏰ 添加定时推送</h3>
-    <div class="form-group"><label>Cron 表达式</label><input id="cronInput" placeholder="如: 0 9 * * * (每天9点)"></div>
-    <div class="cron-presets">
-      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 8 * * *'">每天早上 8:00</span>
-      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 9 * * *'">每天早上 9:00</span>
-      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 12 * * *'">每天中午 12:00</span>
-      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 18 * * *'">每天下午 18:00</span>
-      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 9 * * 1'">每周一 9:00</span>
-      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 9 * * 5'">每周五 9:00</span>
-      <span class="cron-preset" onclick="document.getElementById('cronInput').value='*/30 * * * *'">每30分钟</span>
-      <span class="cron-preset" onclick="document.getElementById('cronInput').value='0 * * * *'">每小时整点</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="form-group" style="flex:1;min-width:60px"><label>年</label><input id="schedYear" type="number" min="${y}" max="${y+5}" value="${y}"></div>
+      <div class="form-group" style="flex:1;min-width:60px"><label>月</label><input id="schedMonth" type="number" min="1" max="12" value="${m}"></div>
+      <div class="form-group" style="flex:1;min-width:60px"><label>日</label><input id="schedDay" type="number" min="1" max="31" value="${d}"></div>
+      <div class="form-group" style="flex:1;min-width:60px"><label>时</label><input id="schedHour" type="number" min="0" max="23" value="${h}"></div>
+      <div class="form-group" style="flex:1;min-width:60px"><label>分</label><input id="schedMin" type="number" min="0" max="59" value="${min}"></div>
     </div>
-    <p style="font-size:11px;color:#999;margin-top:8px">格式: 分 时 日 月 周 (如 0 9 * * 1-5 = 工作日早9点)</p>
+    <p style="font-size:11px;color:#999;margin-top:4px">默认为当前时间，可自行修改</p>
     <div class="actions">
       <button class="btn btn-default" onclick="this.closest('.modal-overlay').remove()">取消</button>
       <button class="btn btn-primary" id="btnAddSchedule">确认添加</button>
@@ -409,12 +418,19 @@ function showScheduleModal() {
   </div>`;
   document.body.appendChild(overlay);
   document.getElementById('btnAddSchedule').onclick = async () => {
-    const expr = document.getElementById('cronInput').value.trim();
-    if (!expr) return toast('请输入 Cron 表达式','error');
+    const yv = parseInt(document.getElementById('schedYear').value);
+    const mv = parseInt(document.getElementById('schedMonth').value);
+    const dv = parseInt(document.getElementById('schedDay').value);
+    const hv = parseInt(document.getElementById('schedHour').value);
+    const minv = parseInt(document.getElementById('schedMin').value);
+    if (isNaN(yv)||isNaN(mv)||isNaN(dv)||isNaN(hv)||isNaN(minv)) return toast('请填写完整日期时间','error');
+    const dt = new Date(yv, mv-1, dv, hv, minv, 0);
+    if (isNaN(dt.getTime())) return toast('日期时间无效','error');
+    if (dt <= new Date()) return toast('必须是未来时间','error');
     try {
-      const res = await fetch(API+'/messages/'+currentMessage.id+'/schedules', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ cron_expression: expr })
+      const res = await apiFetch(API+'/messages/'+currentMessage.id+'/schedules', {
+        method:'POST', headers:{},
+        body: JSON.stringify({ scheduled_at: dt.toISOString() })
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
       overlay.remove();
@@ -426,8 +442,8 @@ function showScheduleModal() {
 }
 
 async function toggleSchedule(id, enabled) {
-  await fetch(API+'/schedules/'+id, {
-    method:'PUT', headers:{'Content-Type':'application/json'},
+  await apiFetch(API+'/schedules/'+id, {
+    method:'PUT', headers:{},
     body: JSON.stringify({ enabled })
   });
   loadSchedules();
@@ -436,13 +452,13 @@ async function toggleSchedule(id, enabled) {
 
 async function deleteSchedule(id) {
   if (!confirm('确定删除此定时任务？')) return;
-  await fetch(API+'/schedules/'+id, { method:'DELETE' });
+  await apiFetch(API+'/schedules/'+id, { method:'DELETE' });
   loadSchedules();
   toast('定时任务已删除','success');
 }
 
 async function showLogs() {
-  const res = await fetch(API+'/logs');
+  const res = await apiFetch(API+);
   const logs = await res.json();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -459,6 +475,22 @@ async function showLogs() {
   </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function handleImageFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 10*1024*1024) { toast('图片不能超过 10MB','error'); input.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const base64 = e.target.result.split(',')[1];
+    document.getElementById('imgBase64').value = base64;
+    // Auto-calculate MD5 placeholder
+    document.getElementById('imgMd5').value = '';
+    updatePreview();
+    toast('图片已转换为 Base64','success');
+  };
+  reader.readAsDataURL(file);
 }
 
 // Init
