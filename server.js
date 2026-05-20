@@ -17,6 +17,54 @@ const WEBHOOK_URL = WEBHOOK_KEY
 const IMAGE_HOST_TOKEN = process.env.IMAGE_HOST_TOKEN || "";
 const API_TOKEN = process.env.API_TOKEN || "";
 
+// ── Security: SSRF protection for image URL download ──
+const dns = require("dns").promises;
+const net = require("net");
+function isPrivateIP(ip) {
+  if (!net.isIP(ip)) return false;
+  if (["0.0.0.0","127.0.0.1","::1","::"].includes(ip)) return true;
+  if (ip.startsWith("10.") || ip.startsWith("192.168.")) return true;
+  if (ip.startsWith("172.")) { const p = parseInt(ip.split(".")[1]); if (p >= 16 && p <= 31) return true; }
+  if (ip.startsWith("169.254.")) return true;
+  if (ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe80")) return true;
+  return false;
+}
+async function isPrivateUrl(urlStr) {
+  try {
+    const h = new URL(urlStr).hostname;
+    if (net.isIP(h)) return isPrivateIP(h);
+    const addrs = await dns.resolve4(h).catch(() => []);
+    const addrs6 = await dns.resolve6(h).catch(() => []);
+    return [...addrs, ...addrs6].some(a => isPrivateIP(a));
+  } catch (_) { return true; }
+}
+
+// ── Security: rate limiter (100 req/min per IP) ──
+const rateMap = new Map();
+function rateLimiter(req, res, next) {
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  const now = Date.now();
+  const win = 60_000; const max = 100;
+  let entry = rateMap.get(ip);
+  if (!entry || now - entry.start > win) { entry = { start: now, count: 0 }; rateMap.set(ip, entry); }
+  entry.count++;
+  if (entry.count > max) return res.status(429).json({ error: "Too many requests" });
+  next();
+}
+setInterval(() => { const cutoff = Date.now() - 90_000; for (const [k, v] of rateMap) { if (v.start < cutoff) rateMap.delete(k); } }, 60_000).unref();
+
+// ── Security: headers ──
+app.use((_, res, next) => {
+  res.set({
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "0",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Cross-Origin-Opener-Policy": "same-origin",
+  });
+  next();
+});
+
 function authMiddleware(req, res, next) {
   if (!API_TOKEN) return next();
   const t = req.headers.authorization?.replace(/^Bearer\s+/i, "")
@@ -93,9 +141,23 @@ try {
 } catch (_) {}
 
 app.use(express.json({ limit: "50mb" }));
+app.use("/api", rateLimiter);
 app.use("/api", authMiddleware);
-const upload = multer({ dest: path.join(__dirname, "uploads"), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({
+  dest: path.join(__dirname, "uploads"),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => {
+    const allowed = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"];
+    cb(null, allowed.includes(file.mimetype));
+  }
+});
 app.use(express.static(path.join(__dirname, "public")));
+
+// Serve index.html with API token injected (not hardcoded in source)
+app.get("/", (_req, res) => {
+  const html = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf-8");
+  res.send(html.replace("__API_TOKEN_PLACEHOLDER__", API_TOKEN));
+});
 
 function toDbDatetime(date) {
   return date.toISOString().replace("T", " ").slice(0, 19);
@@ -104,10 +166,8 @@ function toDbDatetime(date) {
 async function sendToWechatBot(message) {
   if (!WEBHOOK_URL) throw new Error("WEBHOOK_KEY not configured");
   const c = JSON.parse(message.content);
-  console.log(`[sendToWechatBot] id=${message.id} type=${message.msgtype} name="${message.name}" content=${message.content}`);
   let p;
   const post = async (payload) => {
-    console.log(`[sendToWechatBot] POST payload: ${JSON.stringify(payload).slice(0,200)}`);
     const res = await axios.post(WEBHOOK_URL, payload, { headers: { "Content-Type": "application/json" }, timeout: 10000 });
     const d = res.data;
     if (d && d.errcode !== undefined && d.errcode !== 0) {
@@ -122,12 +182,11 @@ async function sendToWechatBot(message) {
       let b64 = c.base64 || "";
       let md5 = c.md5 || "";
       if (!b64 && c.url) {
-        console.log(`[sendToWechatBot] downloading image: ${c.url}`);
+        if (await isPrivateUrl(c.url)) throw new Error("Image URL resolves to private/internal network");
         const resp = await axios.get(c.url, { responseType: "arraybuffer", timeout: 30000 });
         const buf = Buffer.from(resp.data);
         b64 = buf.toString("base64");
         md5 = crypto.createHash("md5").update(buf).digest("hex");
-        console.log(`[sendToWechatBot] downloaded image: base64 length=${b64.length} md5=${md5}`);
       }
       if (!b64) throw new Error("image_text requires base64 or image URL");
       const r1 = await post({ msgtype: "image", image: { base64: b64, md5 } });
@@ -270,17 +329,14 @@ function checkSchedules() {
   const ms = ((60 - sec) % 60) * 1000;
   setTimeout(async () => {
     try {
-      const nowDb = db.prepare("SELECT datetime('now') as dt").get().dt;
       const due = db.prepare(
         "SELECT s.* FROM schedules s JOIN messages m ON s.message_id=m.id " +
         "WHERE s.enabled=1 AND s.sent=0 AND " +
         "substr(REPLACE(s.scheduled_at, 'T', ' '), 1, 19) <= datetime('now')"
       ).all();
-      if (due.length) console.log(`[checkSchedules] now=${nowDb} due=${due.length} ids=${due.map(s=>s.id).join(',')}`);
       for (const s of due) {
         const m = db.prepare("SELECT * FROM messages WHERE id=?").get(s.message_id);
-        if (!m) { console.log(`[checkSchedules] schedule ${s.id}: message ${s.message_id} not found, skipping`); continue; }
-        console.log(`[checkSchedules] sending schedule ${s.id} (msg ${m.id} "${m.name}" type=${m.msgtype}) scheduled_at=${s.scheduled_at}`);
+        if (!m) continue;
         try {
           const r = await sendToWechatBot(m);
           if (m.msgtype === "image_text" && r && r.image_response && r.text_response) {
@@ -290,10 +346,9 @@ function checkSchedules() {
             logSend(m.id, "success", r);
           }
           db.prepare("UPDATE schedules SET sent=1, enabled=0, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(s.id);
-          console.log(`[checkSchedules] schedule ${s.id} SENT and marked done`);
-        } catch (e) { console.error(`[checkSchedules] schedule ${s.id} FAILED:`, e.message); logSend(m.id, "error", e.message); }
+        } catch (e) { logSend(m.id, "error", e.message); }
       }
-    } catch (e) { console.error("[checkSchedules] loop error:", e.message); }
+    } catch (e) { console.error("[checkSchedules] error:", e.message); }
     pr = false;
     checkSchedules();
   }, ms);

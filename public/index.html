@@ -120,7 +120,7 @@ header .badge{padding:4px 12px;border-radius:12px;font-size:12px;background:#e6f
 
 <script>
 const API = '/api';
-const TOKEN = 'KCsBcJiA36hFpT2l9oOHdrLWwc9Im4JC';
+const TOKEN = '__API_TOKEN_PLACEHOLDER__';
 async function apiFetch(url, opts) { opts = opts || {}; opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {}); const res = await fetch(url, opts); if (!res.ok) { let msg = res.status + ' ' + res.statusText; try { const d = await res.json(); if (d.error) msg = d.error; } catch (_) {} throw new Error(msg); } return res; }
 
 let currentMessage = null;
