@@ -6,6 +6,7 @@ const path = require("path");
 const multer = require("multer");
 const FormData = require("form-data");
 const fs = require("fs");
+const crypto = require("crypto");
 const app = express();
 const PORT = process.env.PORT || 3456;
 
@@ -113,7 +114,9 @@ async function sendToWechatBot(message) {
       let md5 = c.md5 || "";
       if (!b64 && c.url) {
         const resp = await axios.get(c.url, { responseType: "arraybuffer", timeout: 30000 });
-        b64 = Buffer.from(resp.data).toString("base64");
+        const buf = Buffer.from(resp.data);
+        b64 = buf.toString("base64");
+        md5 = crypto.createHash("md5").update(buf).digest("hex");
       }
       if (!b64) throw new Error("image_text requires base64 or image URL");
       const r1 = await post({ msgtype: "image", image: { base64: b64, md5 } });
