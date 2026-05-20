@@ -140,6 +140,12 @@ try {
   ).run();
 } catch (_) {}
 
+try {
+  const cols = db.prepare("PRAGMA table_info(schedules)").all().map(c => c.name);
+  if (!cols.includes("schedule_type")) db.exec("ALTER TABLE schedules ADD COLUMN schedule_type TEXT NOT NULL DEFAULT 'once'");
+  if (!cols.includes("last_sent_date")) db.exec("ALTER TABLE schedules ADD COLUMN last_sent_date TEXT");
+} catch (_) {}
+
 app.use(express.json({ limit: "50mb" }));
 app.use("/api", rateLimiter);
 app.use("/api", authMiddleware);
@@ -245,26 +251,45 @@ app.get("/api/messages/:id/schedules", (req, res) => {
   res.json(db.prepare("SELECT * FROM schedules WHERE message_id=? ORDER BY scheduled_at ASC").all(req.params.id));
 });
 app.post("/api/messages/:id/schedules", (req, res) => {
-  const { scheduled_at } = req.body;
-  if (!scheduled_at) return res.status(400).json({ error: "scheduled_at is required" });
-  const dt = new Date(scheduled_at);
-  if (isNaN(dt.getTime())) return res.status(400).json({ error: "Invalid datetime" });
-  if (dt <= new Date()) return res.status(400).json({ error: "Must be in the future" });
+  const { scheduled_at, schedule_type, scheduled_time } = req.body;
+  const type = schedule_type || "once";
   if (!db.prepare("SELECT id FROM messages WHERE id=?").get(req.params.id))
     return res.status(404).json({ error: "Message not found" });
-  const r = db.prepare("INSERT INTO schedules (message_id, scheduled_at) VALUES (?,?)")
-    .run(req.params.id, toDbDatetime(dt));
-  res.status(201).json(db.prepare("SELECT * FROM schedules WHERE id=?").get(r.lastInsertRowid));
-});
-app.put("/api/schedules/:id", (req, res) => {
-  const { scheduled_at, enabled } = req.body;
-  if (!db.prepare("SELECT id FROM schedules WHERE id=?").get(req.params.id))
-    return res.status(404).json({ error: "Not found" });
-  if (scheduled_at) {
+  if (type === "daily") {
+    const time = scheduled_time || scheduled_at;
+    if (!time) return res.status(400).json({ error: "scheduled_time is required for daily schedules" });
+    if (!/^\d{2}:\d{2}$/.test(time)) return res.status(400).json({ error: "scheduled_time must be HH:MM format" });
+    const [h, m] = time.split(":").map(Number);
+    if (h < 0 || h > 23 || m < 0 || m > 59) return res.status(400).json({ error: "Invalid time" });
+    const r = db.prepare("INSERT INTO schedules (message_id, scheduled_at, schedule_type) VALUES (?,?,?)")
+      .run(req.params.id, time, type);
+    res.status(201).json(db.prepare("SELECT * FROM schedules WHERE id=?").get(r.lastInsertRowid));
+  } else {
+    if (!scheduled_at) return res.status(400).json({ error: "scheduled_at is required" });
     const dt = new Date(scheduled_at);
     if (isNaN(dt.getTime())) return res.status(400).json({ error: "Invalid datetime" });
-    db.prepare("UPDATE schedules SET scheduled_at=?, sent=0, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-      .run(toDbDatetime(dt), req.params.id);
+    if (dt <= new Date()) return res.status(400).json({ error: "Must be in the future" });
+    const r = db.prepare("INSERT INTO schedules (message_id, scheduled_at) VALUES (?,?)")
+      .run(req.params.id, toDbDatetime(dt));
+    res.status(201).json(db.prepare("SELECT * FROM schedules WHERE id=?").get(r.lastInsertRowid));
+  }
+});
+app.put("/api/schedules/:id", (req, res) => {
+  const { scheduled_at, scheduled_time, schedule_type, enabled } = req.body;
+  const existing = db.prepare("SELECT * FROM schedules WHERE id=?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const newType = schedule_type || existing.schedule_type || "once";
+  if (newType === "daily" && scheduled_time) {
+    if (!/^\d{2}:\d{2}$/.test(scheduled_time)) return res.status(400).json({ error: "scheduled_time must be HH:MM format" });
+    const [h, m] = scheduled_time.split(":").map(Number);
+    if (h < 0 || h > 23 || m < 0 || m > 59) return res.status(400).json({ error: "Invalid time" });
+    db.prepare("UPDATE schedules SET scheduled_at=?, schedule_type=?, last_sent_date=NULL, sent=0, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(scheduled_time, newType, req.params.id);
+  } else if (scheduled_at && newType === "once") {
+    const dt = new Date(scheduled_at);
+    if (isNaN(dt.getTime())) return res.status(400).json({ error: "Invalid datetime" });
+    db.prepare("UPDATE schedules SET scheduled_at=?, schedule_type=?, sent=0, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(toDbDatetime(dt), newType, req.params.id);
   }
   if (enabled !== undefined)
     db.prepare("UPDATE schedules SET enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -328,11 +353,23 @@ function checkSchedules() {
   const ms = ((60 - sec) % 60) * 1000;
   setTimeout(async () => {
     try {
-      const due = db.prepare(
+      const now = new Date();
+      const hhmm = String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
+      const today = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0") + "-" + String(now.getDate()).padStart(2,"0");
+
+      const dueOnce = db.prepare(
         "SELECT s.* FROM schedules s JOIN messages m ON s.message_id=m.id " +
-        "WHERE s.enabled=1 AND s.sent=0 AND " +
+        "WHERE s.enabled=1 AND s.sent=0 AND s.schedule_type='once' AND " +
         "substr(REPLACE(s.scheduled_at, 'T', ' '), 1, 19) <= datetime('now')"
       ).all();
+
+      const dueDaily = db.prepare(
+        "SELECT s.* FROM schedules s JOIN messages m ON s.message_id=m.id " +
+        "WHERE s.enabled=1 AND s.schedule_type='daily' AND " +
+        "s.scheduled_at <= ? AND (s.last_sent_date IS NULL OR s.last_sent_date != ?)"
+      ).all(hhmm, today);
+
+      const due = [...dueOnce, ...dueDaily];
       for (const s of due) {
         const m = db.prepare("SELECT * FROM messages WHERE id=?").get(s.message_id);
         if (!m) continue;
@@ -344,7 +381,12 @@ function checkSchedules() {
           } else {
             logSend(m.id, "success", r);
           }
-          db.prepare("UPDATE schedules SET sent=1, enabled=0, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(s.id);
+          if (s.schedule_type === "daily") {
+            db.prepare("UPDATE schedules SET last_sent_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+              .run(today, s.id);
+          } else {
+            db.prepare("UPDATE schedules SET sent=1, enabled=0, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(s.id);
+          }
         } catch (e) { logSend(m.id, "error", e.message); }
       }
     } catch (e) { console.error("[checkSchedules] error:", e.message); }
