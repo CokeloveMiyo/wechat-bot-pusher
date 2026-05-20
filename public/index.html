@@ -55,25 +55,14 @@ header .badge{padding:4px 12px;border-radius:12px;font-size:12px;background:#e6f
 .btn-default:hover{border-color:var(--primary);color:var(--primary)}
 .btn-sm{padding:4px 10px;font-size:12px}
 .tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px}
-.tag-text{background:#e6f7ff;color:#1890ff}
-.tag-markdown{background:#f6ffed;color:#52c41a}
-.tag-news{background:#fff7e6;color:#fa8c16}
-.tag-image{background:#f9f0ff;color:#722ed1}.tag-image_text{background:#fff0f6;color:#eb2f96}
+.tag-text{background:#e6f7ff;color:#1890ff}.tag-markdown{background:#f6ffed;color:#52c41a}.tag-image_text{background:#fff0f6;color:#eb2f96}
 .card{background:#fff;border-radius:var(--radius);border:1px solid var(--border);padding:16px;margin-bottom:16px}
 .card h3{font-size:14px;margin-bottom:12px}
-.article-item{display:flex;gap:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;position:relative}
-.article-item .remove-article{position:absolute;top:6px;right:6px;background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px}
-.article-item img{width:80px;height:80px;object-fit:cover;border-radius:4px;background:#f5f5f5}
-.article-item .article-fields{flex:1;min-width:0}
-.article-item .article-fields input{margin-bottom:6px}
 .schedule-row{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fafafa;border-radius:var(--radius);margin-bottom:8px;font-size:13px}
 .schedule-row .cron-text{font-family:monospace;font-size:12px;color:var(--primary)}
 .schedule-row .enabled-dot{width:8px;height:8px;border-radius:50%}
 .schedule-row .enabled-dot.on{background:var(--success)}
 .schedule-row .enabled-dot.off{background:#d9d9d9}
-.cron-presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-.cron-preset{padding:4px 10px;border-radius:12px;font-size:11px;background:#f0f5ff;color:var(--primary);cursor:pointer;border:1px solid transparent;transition:all .15s}
-.cron-preset:hover{border-color:var(--primary)}
 .log-item{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:10px}
 .log-item .log-status{width:6px;height:6px;border-radius:50%;flex-shrink:0}
 .log-item .log-status.ok{background:var(--success)}
@@ -160,7 +149,7 @@ async function loadMessages() {
   const list = document.getElementById('messageList');
   if (!msgs.length) { list.innerHTML = '<div class="empty-state"><span class="emoji">📭</span><p>暂无消息，点击上方创建</p></div>'; return; }
   list.innerHTML = msgs.map(m => {
-    const icon = {text:'💬',markdown:'📝',news:'📰',image:'🖼️',image_text:'🖼️💬'}[m.msgtype]||'📄';
+    const icon = {text:'💬',markdown:'📝',image_text:'🖼️💬'}[m.msgtype]||'📄';
     const tagClass = 'tag tag-'+m.msgtype;
     return `<div class="sidebar-item${currentMessage&&currentMessage.id===m.id?' active':''}" onclick="selectMessage(${m.id})">
       <span class="icon">${icon}</span>
@@ -212,22 +201,9 @@ function collectFormData() {
     content.text = document.getElementById('textContent')?.value || '';
   } else if (msgtype === 'markdown') {
     content.markdown = document.getElementById('mdContent')?.value || '';
-  } else if (msgtype === 'news') {
-    content.articles = [];
-    document.querySelectorAll('.article-item').forEach(item => {
-      content.articles.push({
-        title: item.querySelector('.art-title')?.value || '',
-        description: item.querySelector('.art-desc')?.value || '',
-        url: item.querySelector('.art-url')?.value || '',
-        picurl: item.querySelector('.art-pic')?.value || ''
-      });
-    });
-  } else if (msgtype === 'image') {
-    content.base64 = document.getElementById('imgBase64')?.value || '';
-    content.md5 = document.getElementById('imgMd5')?.value || '';
   } else if (msgtype === 'image_text') {
     content.base64 = document.getElementById('imgBase64')?.value || '';
-    content.md5 = document.getElementById('imgMd5')?.value || '';
+    content.url = document.getElementById('imgUrl')?.value || '';
     content.text = document.getElementById('textContent')?.value || '';
   }
   return { name, msgtype, content };
@@ -270,24 +246,8 @@ function renderEditor() {
     typeFields = `<div class="form-group"><label>文本内容</label><textarea id="textContent" rows="4" placeholder="输入要发送的文本...">${escHtml(content.text||'')}</textarea></div>`;
   } else if (m.msgtype === 'markdown') {
     typeFields = `<div class="form-group"><label>Markdown 内容</label><textarea id="mdContent" rows="6" placeholder="支持企业微信 Markdown 语法...">${escHtml(content.markdown||'')}</textarea></div>`;
-  } else if (m.msgtype === 'news') {
-    const articles = content.articles || [{title:'',description:'',url:'',picurl:''}];
-    typeFields = `<div class="form-group"><label>图文消息</label><div id="articlesContainer">${articles.map((a,i)=>
-      `<div class="article-item">
-        <button class="remove-article" onclick="this.parentElement.remove();updatePreview()">×</button>
-        ${a.picurl ? `<img src="${escHtml(a.picurl)}" onerror="this.style.display='none'" alt="">` : ''}
-        <div class="article-fields">
-          <input class="art-title" placeholder="标题" value="${escHtml(a.title||'')}" oninput="updatePreview()">
-          <input class="art-desc" placeholder="描述（可选）" value="${escHtml(a.description||'')}" oninput="updatePreview()">
-          <input class="art-url" placeholder="链接 URL" value="${escHtml(a.url||'')}" oninput="updatePreview()">
-          <input class="art-pic" placeholder="图片 URL（可选）" value="${escHtml(a.picurl||'')}" oninput="updatePreview()">
-        </div>
-      </div>`
-    ).join('')}</div><button class="btn btn-default btn-sm" onclick="addArticle();updatePreview()">+ 添加图文</button></div>`;
-  } else if (m.msgtype === 'image') {
-    typeFields = `<div class="form-group"><label>上传本地图片</label><input type="file" id="imgFile" accept="image/*" onchange="handleImageFile(this)" style="margin-bottom:8px"><br><small style="color:#999">选择后自动转 Base64</small></div><div class="form-group"><label>Base64 图片数据</label><textarea id="imgBase64" rows="3" placeholder="图片的 Base64 编码..." readonly>${escHtml(content.base64||'')}</textarea></div><div class="form-group"><label>MD5 校验值</label><input id="imgMd5" placeholder="图片 MD5" value="${escHtml(content.md5||'')}"></div>`;
   } else if (m.msgtype === 'image_text') {
-    typeFields = `<div class="form-group"><label>📷 上传图片</label><input type="file" id="imgFile" accept="image/*" onchange="handleImageFile(this)" style="margin-bottom:8px"><br><small style="color:#999">选择后自动转 Base64</small></div><div class="form-group"><label>Base64 图片数据</label><textarea id="imgBase64" rows="2" placeholder="图片的 Base64 编码..." readonly>${escHtml(content.base64||'')}</textarea></div><div class="form-group"><label>MD5 校验值</label><input id="imgMd5" placeholder="图片 MD5" value="${escHtml(content.md5||'')}"></div><div class="form-group"><label>💬 文字说明</label><textarea id="textContent" rows="3" placeholder="图片发送后跟随的文字说明...">${escHtml(content.text||'')}</textarea></div>`;
+    typeFields = `<div class="form-group"><label>📷 上传本地图片（自动转 Base64）</label><input type="file" id="imgFile" accept="image/*" onchange="handleImageFile(this)" style="margin-bottom:4px"></div><div class="form-group"><label>🌐 或输入图片 URL（图床链接）</label><input id="imgUrl" placeholder="https://example.com/image.png" value="${escHtml(content.url||'')}" oninput="updatePreview()"></div><div class="form-group"><label>Base64 图片数据（自动填入）</label><textarea id="imgBase64" rows="2" placeholder="上传本地图片后自动填入，或用 URL 则留空由服务器下载..." readonly>${escHtml(content.base64||'')}</textarea></div><div class="form-group"><label>💬 文字说明</label><textarea id="textContent" rows="3" placeholder="图片发送后跟随的文字说明...">${escHtml(content.text||'')}</textarea></div>`;
   }
 
   mc.innerHTML = `
@@ -298,8 +258,6 @@ function renderEditor() {
           <select id="msgType" onchange="changeMsgType(this.value)">
             <option value="text" ${m.msgtype==='text'?'selected':''}>💬 文本消息</option>
             <option value="markdown" ${m.msgtype==='markdown'?'selected':''}>📝 Markdown 消息</option>
-            <option value="news" ${m.msgtype==='news'?'selected':''}>📰 图文消息</option>
-            <option value="image" ${m.msgtype==='image'?'selected':''}>🖼️ 图片消息</option>
             <option value="image_text" ${m.msgtype==='image_text'?'selected':''}>🖼️💬 图片+文字</option>
           </select>
         </div>
@@ -321,21 +279,6 @@ function changeMsgType(type) {
   renderEditor();
 }
 
-function addArticle() {
-  const container = document.getElementById('articlesContainer');
-  if (!container) return;
-  const div = document.createElement('div');
-  div.className = 'article-item';
-  div.innerHTML = `<button class="remove-article" onclick="this.parentElement.remove();updatePreview()">×</button>
-    <div class="article-fields">
-      <input class="art-title" placeholder="标题" oninput="updatePreview()">
-      <input class="art-desc" placeholder="描述（可选）" oninput="updatePreview()">
-      <input class="art-url" placeholder="链接 URL" oninput="updatePreview()">
-      <input class="art-pic" placeholder="图片 URL（可选）" oninput="updatePreview()">
-    </div>`;
-  container.appendChild(div);
-}
-
 function updatePreview() {
   const pc = document.getElementById('previewContent');
   if (!pc) return;
@@ -346,29 +289,18 @@ function updatePreview() {
   } else if (msgtype === 'markdown') {
     const md = document.getElementById('mdContent')?.value || '';
     pc.innerHTML = `<div style="background:#f6ffed;padding:10px 14px;border-radius:8px;font-size:14px;white-space:pre-wrap;word-break:break-word;font-family:monospace">${escHtml(md) || '<span style="color:#ccc">Markdown 内容预览</span>'}</div>`;
-  } else if (msgtype === 'news') {
-    let html = '';
-    document.querySelectorAll('.article-item').forEach(item => {
-      const title = item.querySelector('.art-title')?.value || '';
-      const desc = item.querySelector('.art-desc')?.value || '';
-      const url = item.querySelector('.art-url')?.value || '#';
-      const pic = item.querySelector('.art-pic')?.value || '';
-      html += `<a href="${escHtml(url)}" target="_blank" style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #eee;text-decoration:none;color:inherit;align-items:flex-start">
-        ${pic?`<img src="${escHtml(pic)}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display='none'">`:''}
-        <div style="min-width:0"><div style="font-size:14px;font-weight:500;margin-bottom:4px">${escHtml(title)||'未命名'}</div><div style="font-size:12px;color:#999">${escHtml(desc)}</div></div>
-      </a>`;
-    });
-    pc.innerHTML = html || '<span style="color:#ccc">图文预览</span>';
-  } else if (msgtype === 'image') {
-    const b64 = document.getElementById('imgBase64')?.value || '';
-    if (b64) pc.innerHTML = `<div style="font-size:12px;color:#999;margin-bottom:8px">Base64 长度: ${b64.length} 字符</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div style="display:none;color:#ff4d4f;font-size:12px">图片无法预览</div>`;
-    else pc.innerHTML = '<span style="color:#ccc">图片预览（需填入 Base64）</span>';
   } else if (msgtype === 'image_text') {
     const b64 = document.getElementById('imgBase64')?.value || '';
+    const imgUrl = document.getElementById('imgUrl')?.value || '';
     const txt = document.getElementById('textContent')?.value || '';
     let html = '';
-    if (b64) html += `<div style="font-size:12px;color:#999;margin-bottom:8px">📷 图片 (Base64: ${b64.length} 字符)</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px;margin-bottom:10px" onerror="this.style.display='none'">`;
-    else html += '<div style="color:#ccc;margin-bottom:8px">📷 图片预览（需填入 Base64）</div>';
+    if (b64) {
+      html += `<div style="font-size:12px;color:#999;margin-bottom:8px">📷 本地图片 (Base64: ${b64.length} 字符)</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px;margin-bottom:10px" onerror="this.style.display='none'">`;
+    } else if (imgUrl) {
+      html += `<div style="font-size:12px;color:#999;margin-bottom:8px">🌐 图床链接</div><img src="${escHtml(imgUrl)}" style="max-width:100%;border-radius:4px;margin-bottom:10px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div style="display:none;color:#ff4d4f;font-size:12px;margin-bottom:8px">图片无法预览（链接可能失效）</div>`;
+    } else {
+      html += '<div style="color:#ccc;margin-bottom:8px">📷 请上传本地图片或填入图床 URL</div>';
+    }
     html += `<div style="background:#e6f7ff;padding:10px 14px;border-radius:8px;font-size:14px;white-space:pre-wrap;word-break:break-word">${escHtml(txt) || '<span style="color:#ccc">文字说明预览</span>'}</div>`;
     pc.innerHTML = html;
   }
@@ -506,7 +438,6 @@ function handleImageFile(input) {
   reader.onload = function(e) {
     const base64 = e.target.result.split(',')[1];
     document.getElementById('imgBase64').value = base64;
-    document.getElementById('imgMd5').value = '';
     updatePreview();
     toast('图片已转换为 Base64','success');
   };

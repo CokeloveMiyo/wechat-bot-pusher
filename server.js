@@ -91,7 +91,7 @@ try {
   ).run();
 } catch (_) {}
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
 app.use("/api", authMiddleware);
 const upload = multer({ dest: path.join(__dirname, "uploads"), limits: { fileSize: 10 * 1024 * 1024 } });
 app.use(express.static(path.join(__dirname, "public")));
@@ -108,11 +108,15 @@ async function sendToWechatBot(message) {
   switch (message.msgtype) {
     case "text": p = { msgtype: "text", text: { content: c.text || "" } }; break;
     case "markdown": p = { msgtype: "markdown", markdown: { content: c.markdown || "" } }; break;
-    case "news": p = { msgtype: "news", news: { articles: (c.articles || []).slice(0, 8) } }; break;
-    case "image": p = { msgtype: "image", image: { base64: c.base64 || "", md5: c.md5 || "" } }; break;
     case "image_text": {
-      if (!c.base64) throw new Error("image_text requires base64 image data");
-      const r1 = await post({ msgtype: "image", image: { base64: c.base64, md5: c.md5 || "" } });
+      let b64 = c.base64 || "";
+      let md5 = c.md5 || "";
+      if (!b64 && c.url) {
+        const resp = await axios.get(c.url, { responseType: "arraybuffer", timeout: 30000 });
+        b64 = Buffer.from(resp.data).toString("base64");
+      }
+      if (!b64) throw new Error("image_text requires base64 or image URL");
+      const r1 = await post({ msgtype: "image", image: { base64: b64, md5 } });
       if (!c.text) return r1.data;
       const r2 = await post({ msgtype: "text", text: { content: c.text } });
       return { image_response: r1.data, text_response: r2.data };
@@ -139,7 +143,7 @@ app.get("/api/messages/:id", (req, res) => {
 app.post("/api/messages", (req, res) => {
   const { name, msgtype, content } = req.body;
   if (!name || !msgtype) return res.status(400).json({ error: "Name and type required" });
-  if (!["text","markdown","news","image","image_text"].includes(msgtype))
+  if (!["text","markdown","image_text"].includes(msgtype))
     return res.status(400).json({ error: "Invalid msgtype" });
   const r = db.prepare("INSERT INTO messages (name, msgtype, content) VALUES (?, ?, ?)")
     .run(name, msgtype, JSON.stringify(content || {}));
@@ -149,7 +153,7 @@ app.put("/api/messages/:id", (req, res) => {
   const { name, msgtype, content } = req.body;
   if (!db.prepare("SELECT id FROM messages WHERE id=?").get(req.params.id))
     return res.status(404).json({ error: "Not found" });
-  if (msgtype && !["text","markdown","news","image","image_text"].includes(msgtype))
+  if (msgtype && !["text","markdown","image_text"].includes(msgtype))
     return res.status(400).json({ error: "Invalid msgtype" });
   db.prepare("UPDATE messages SET name=COALESCE(?,name), msgtype=COALESCE(?,msgtype), content=COALESCE(?,content), updated_at=CURRENT_TIMESTAMP WHERE id=?")
     .run(name||null, msgtype||null, content?JSON.stringify(content):null, req.params.id);
