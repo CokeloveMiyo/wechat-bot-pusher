@@ -151,13 +151,12 @@ const upload = multer({
     cb(null, allowed.includes(file.mimetype));
   }
 });
-app.use(express.static(path.join(__dirname, "public")));
-
-// Serve index.html with API token injected (not hardcoded in source)
+// Serve index.html with API token injected (not hardcoded in source) — must be before static
 app.get("/", (_req, res) => {
   const html = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf-8");
   res.send(html.replace("__API_TOKEN_PLACEHOLDER__", API_TOKEN));
 });
+app.use(express.static(path.join(__dirname, "public")));
 
 function toDbDatetime(date) {
   return date.toISOString().replace("T", " ").slice(0, 19);
