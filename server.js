@@ -104,8 +104,17 @@ function toDbDatetime(date) {
 async function sendToWechatBot(message) {
   if (!WEBHOOK_URL) throw new Error("WEBHOOK_KEY not configured");
   const c = JSON.parse(message.content);
+  console.log(`[sendToWechatBot] id=${message.id} type=${message.msgtype} name="${message.name}" content=${message.content}`);
   let p;
-  const post = (payload) => axios.post(WEBHOOK_URL, payload, { headers: { "Content-Type": "application/json" }, timeout: 10000 });
+  const post = async (payload) => {
+    console.log(`[sendToWechatBot] POST payload: ${JSON.stringify(payload).slice(0,200)}`);
+    const res = await axios.post(WEBHOOK_URL, payload, { headers: { "Content-Type": "application/json" }, timeout: 10000 });
+    const d = res.data;
+    if (d && d.errcode !== undefined && d.errcode !== 0) {
+      throw new Error(`WeChat API error: errcode=${d.errcode} errmsg="${d.errmsg}"`);
+    }
+    return res;
+  };
   switch (message.msgtype) {
     case "text": p = { msgtype: "text", text: { content: c.text || "" } }; break;
     case "markdown": p = { msgtype: "markdown", markdown: { content: c.markdown || "" } }; break;
@@ -113,10 +122,12 @@ async function sendToWechatBot(message) {
       let b64 = c.base64 || "";
       let md5 = c.md5 || "";
       if (!b64 && c.url) {
+        console.log(`[sendToWechatBot] downloading image: ${c.url}`);
         const resp = await axios.get(c.url, { responseType: "arraybuffer", timeout: 30000 });
         const buf = Buffer.from(resp.data);
         b64 = buf.toString("base64");
         md5 = crypto.createHash("md5").update(buf).digest("hex");
+        console.log(`[sendToWechatBot] downloaded image: base64 length=${b64.length} md5=${md5}`);
       }
       if (!b64) throw new Error("image_text requires base64 or image URL");
       const r1 = await post({ msgtype: "image", image: { base64: b64, md5 } });
@@ -259,14 +270,17 @@ function checkSchedules() {
   const ms = ((60 - sec) % 60) * 1000;
   setTimeout(async () => {
     try {
+      const nowDb = db.prepare("SELECT datetime('now') as dt").get().dt;
       const due = db.prepare(
         "SELECT s.* FROM schedules s JOIN messages m ON s.message_id=m.id " +
         "WHERE s.enabled=1 AND s.sent=0 AND " +
         "substr(REPLACE(s.scheduled_at, 'T', ' '), 1, 19) <= datetime('now')"
       ).all();
+      if (due.length) console.log(`[checkSchedules] now=${nowDb} due=${due.length} ids=${due.map(s=>s.id).join(',')}`);
       for (const s of due) {
         const m = db.prepare("SELECT * FROM messages WHERE id=?").get(s.message_id);
-        if (!m) continue;
+        if (!m) { console.log(`[checkSchedules] schedule ${s.id}: message ${s.message_id} not found, skipping`); continue; }
+        console.log(`[checkSchedules] sending schedule ${s.id} (msg ${m.id} "${m.name}" type=${m.msgtype}) scheduled_at=${s.scheduled_at}`);
         try {
           const r = await sendToWechatBot(m);
           if (m.msgtype === "image_text" && r && r.image_response && r.text_response) {
@@ -276,9 +290,10 @@ function checkSchedules() {
             logSend(m.id, "success", r);
           }
           db.prepare("UPDATE schedules SET sent=1, enabled=0, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(s.id);
-        } catch (e) { logSend(m.id, "error", e.message); }
+          console.log(`[checkSchedules] schedule ${s.id} SENT and marked done`);
+        } catch (e) { console.error(`[checkSchedules] schedule ${s.id} FAILED:`, e.message); logSend(m.id, "error", e.message); }
       }
-    } catch (_) {}
+    } catch (e) { console.error("[checkSchedules] loop error:", e.message); }
     pr = false;
     checkSchedules();
   }, ms);
