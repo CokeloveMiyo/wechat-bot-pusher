@@ -104,14 +104,22 @@ async function sendToWechatBot(message) {
   if (!WEBHOOK_URL) throw new Error("WEBHOOK_KEY not configured");
   const c = JSON.parse(message.content);
   let p;
+  const post = (payload) => axios.post(WEBHOOK_URL, payload, { headers: { "Content-Type": "application/json" }, timeout: 10000 });
   switch (message.msgtype) {
     case "text": p = { msgtype: "text", text: { content: c.text || "" } }; break;
     case "markdown": p = { msgtype: "markdown", markdown: { content: c.markdown || "" } }; break;
     case "news": p = { msgtype: "news", news: { articles: (c.articles || []).slice(0, 8) } }; break;
     case "image": p = { msgtype: "image", image: { base64: c.base64 || "", md5: c.md5 || "" } }; break;
+    case "image_text": {
+      if (!c.base64) throw new Error("image_text requires base64 image data");
+      const r1 = await post({ msgtype: "image", image: { base64: c.base64, md5: c.md5 || "" } });
+      if (!c.text) return r1.data;
+      const r2 = await post({ msgtype: "text", text: { content: c.text } });
+      return { image_response: r1.data, text_response: r2.data };
+    }
     default: throw new Error("Unsupported msgtype: " + message.msgtype);
   }
-  const r = await axios.post(WEBHOOK_URL, p, { headers: { "Content-Type": "application/json" }, timeout: 10000 });
+  const r = await post(p);
   return r.data;
 }
 
@@ -131,7 +139,7 @@ app.get("/api/messages/:id", (req, res) => {
 app.post("/api/messages", (req, res) => {
   const { name, msgtype, content } = req.body;
   if (!name || !msgtype) return res.status(400).json({ error: "Name and type required" });
-  if (!["text","markdown","news","image"].includes(msgtype))
+  if (!["text","markdown","news","image","image_text"].includes(msgtype))
     return res.status(400).json({ error: "Invalid msgtype" });
   const r = db.prepare("INSERT INTO messages (name, msgtype, content) VALUES (?, ?, ?)")
     .run(name, msgtype, JSON.stringify(content || {}));
@@ -141,7 +149,7 @@ app.put("/api/messages/:id", (req, res) => {
   const { name, msgtype, content } = req.body;
   if (!db.prepare("SELECT id FROM messages WHERE id=?").get(req.params.id))
     return res.status(404).json({ error: "Not found" });
-  if (msgtype && !["text","markdown","news","image"].includes(msgtype))
+  if (msgtype && !["text","markdown","news","image","image_text"].includes(msgtype))
     return res.status(400).json({ error: "Invalid msgtype" });
   db.prepare("UPDATE messages SET name=COALESCE(?,name), msgtype=COALESCE(?,msgtype), content=COALESCE(?,content), updated_at=CURRENT_TIMESTAMP WHERE id=?")
     .run(name||null, msgtype||null, content?JSON.stringify(content):null, req.params.id);
@@ -199,7 +207,12 @@ app.post("/api/messages/:id/send", async (req, res) => {
   if (!m) return res.status(404).json({ error: "Not found" });
   try {
     const r = await sendToWechatBot(m);
-    logSend(m.id, "success", r);
+    if (m.msgtype === "image_text" && r && r.image_response && r.text_response) {
+      logSend(m.id, "success", r.image_response);
+      logSend(m.id, "success", r.text_response);
+    } else {
+      logSend(m.id, "success", r);
+    }
     res.json({ success: true, response: r });
   } catch (e) {
     logSend(m.id, "error", e.message);
@@ -237,23 +250,29 @@ function checkSchedules() {
   pr = true;
   const sec = new Date().getSeconds();
   const ms = ((60 - sec) % 60) * 1000;
-  setTimeout(() => {
-    pr = false;
+  setTimeout(async () => {
     try {
       const due = db.prepare(
         "SELECT s.* FROM schedules s JOIN messages m ON s.message_id=m.id " +
         "WHERE s.enabled=1 AND s.sent=0 AND " +
         "substr(REPLACE(s.scheduled_at, 'T', ' '), 1, 19) <= datetime('now')"
       ).all();
-      due.forEach(s => {
+      for (const s of due) {
         const m = db.prepare("SELECT * FROM messages WHERE id=?").get(s.message_id);
-        if (!m) return;
-        sendToWechatBot(m).then(r => {
-          logSend(m.id, "success", r);
+        if (!m) continue;
+        try {
+          const r = await sendToWechatBot(m);
+          if (m.msgtype === "image_text" && r && r.image_response && r.text_response) {
+            logSend(m.id, "success", r.image_response);
+            logSend(m.id, "success", r.text_response);
+          } else {
+            logSend(m.id, "success", r);
+          }
           db.prepare("UPDATE schedules SET sent=1, enabled=0, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(s.id);
-        }).catch(e => { logSend(m.id, "error", e.message); });
-      });
+        } catch (e) { logSend(m.id, "error", e.message); }
+      }
     } catch (_) {}
+    pr = false;
     checkSchedules();
   }, ms);
 }

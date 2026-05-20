@@ -58,7 +58,7 @@ header .badge{padding:4px 12px;border-radius:12px;font-size:12px;background:#e6f
 .tag-text{background:#e6f7ff;color:#1890ff}
 .tag-markdown{background:#f6ffed;color:#52c41a}
 .tag-news{background:#fff7e6;color:#fa8c16}
-.tag-image{background:#f9f0ff;color:#722ed1}
+.tag-image{background:#f9f0ff;color:#722ed1}.tag-image_text{background:#fff0f6;color:#eb2f96}
 .card{background:#fff;border-radius:var(--radius);border:1px solid var(--border);padding:16px;margin-bottom:16px}
 .card h3{font-size:14px;margin-bottom:12px}
 .article-item{display:flex;gap:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;position:relative}
@@ -160,7 +160,7 @@ async function loadMessages() {
   const list = document.getElementById('messageList');
   if (!msgs.length) { list.innerHTML = '<div class="empty-state"><span class="emoji">📭</span><p>暂无消息，点击上方创建</p></div>'; return; }
   list.innerHTML = msgs.map(m => {
-    const icon = {text:'💬',markdown:'📝',news:'📰',image:'🖼️'}[m.msgtype]||'📄';
+    const icon = {text:'💬',markdown:'📝',news:'📰',image:'🖼️',image_text:'🖼️💬'}[m.msgtype]||'📄';
     const tagClass = 'tag tag-'+m.msgtype;
     return `<div class="sidebar-item${currentMessage&&currentMessage.id===m.id?' active':''}" onclick="selectMessage(${m.id})">
       <span class="icon">${icon}</span>
@@ -225,6 +225,10 @@ function collectFormData() {
   } else if (msgtype === 'image') {
     content.base64 = document.getElementById('imgBase64')?.value || '';
     content.md5 = document.getElementById('imgMd5')?.value || '';
+  } else if (msgtype === 'image_text') {
+    content.base64 = document.getElementById('imgBase64')?.value || '';
+    content.md5 = document.getElementById('imgMd5')?.value || '';
+    content.text = document.getElementById('textContent')?.value || '';
   }
   return { name, msgtype, content };
 }
@@ -282,6 +286,8 @@ function renderEditor() {
     ).join('')}</div><button class="btn btn-default btn-sm" onclick="addArticle();updatePreview()">+ 添加图文</button></div>`;
   } else if (m.msgtype === 'image') {
     typeFields = `<div class="form-group"><label>上传本地图片</label><input type="file" id="imgFile" accept="image/*" onchange="handleImageFile(this)" style="margin-bottom:8px"><br><small style="color:#999">选择后自动转 Base64</small></div><div class="form-group"><label>Base64 图片数据</label><textarea id="imgBase64" rows="3" placeholder="图片的 Base64 编码..." readonly>${escHtml(content.base64||'')}</textarea></div><div class="form-group"><label>MD5 校验值</label><input id="imgMd5" placeholder="图片 MD5" value="${escHtml(content.md5||'')}"></div>`;
+  } else if (m.msgtype === 'image_text') {
+    typeFields = `<div class="form-group"><label>📷 上传图片</label><input type="file" id="imgFile" accept="image/*" onchange="handleImageFile(this)" style="margin-bottom:8px"><br><small style="color:#999">选择后自动转 Base64</small></div><div class="form-group"><label>Base64 图片数据</label><textarea id="imgBase64" rows="2" placeholder="图片的 Base64 编码..." readonly>${escHtml(content.base64||'')}</textarea></div><div class="form-group"><label>MD5 校验值</label><input id="imgMd5" placeholder="图片 MD5" value="${escHtml(content.md5||'')}"></div><div class="form-group"><label>💬 文字说明</label><textarea id="textContent" rows="3" placeholder="图片发送后跟随的文字说明...">${escHtml(content.text||'')}</textarea></div>`;
   }
 
   mc.innerHTML = `
@@ -294,6 +300,7 @@ function renderEditor() {
             <option value="markdown" ${m.msgtype==='markdown'?'selected':''}>📝 Markdown 消息</option>
             <option value="news" ${m.msgtype==='news'?'selected':''}>📰 图文消息</option>
             <option value="image" ${m.msgtype==='image'?'selected':''}>🖼️ 图片消息</option>
+            <option value="image_text" ${m.msgtype==='image_text'?'selected':''}>🖼️💬 图片+文字</option>
           </select>
         </div>
       </div>
@@ -356,6 +363,14 @@ function updatePreview() {
     const b64 = document.getElementById('imgBase64')?.value || '';
     if (b64) pc.innerHTML = `<div style="font-size:12px;color:#999;margin-bottom:8px">Base64 长度: ${b64.length} 字符</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div style="display:none;color:#ff4d4f;font-size:12px">图片无法预览</div>`;
     else pc.innerHTML = '<span style="color:#ccc">图片预览（需填入 Base64）</span>';
+  } else if (msgtype === 'image_text') {
+    const b64 = document.getElementById('imgBase64')?.value || '';
+    const txt = document.getElementById('textContent')?.value || '';
+    let html = '';
+    if (b64) html += `<div style="font-size:12px;color:#999;margin-bottom:8px">📷 图片 (Base64: ${b64.length} 字符)</div><img src="data:image/png;base64,${b64}" style="max-width:100%;border-radius:4px;margin-bottom:10px" onerror="this.style.display='none'">`;
+    else html += '<div style="color:#ccc;margin-bottom:8px">📷 图片预览（需填入 Base64）</div>';
+    html += `<div style="background:#e6f7ff;padding:10px 14px;border-radius:8px;font-size:14px;white-space:pre-wrap;word-break:break-word">${escHtml(txt) || '<span style="color:#ccc">文字说明预览</span>'}</div>`;
+    pc.innerHTML = html;
   }
 }
 
