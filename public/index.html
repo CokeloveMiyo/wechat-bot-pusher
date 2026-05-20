@@ -381,6 +381,7 @@ function showScheduleModal() {
     if (isNaN(dt.getTime())) return toast('日期时间无效','error');
     if (dt <= new Date()) return toast('必须是未来时间','error');
     try {
+      await saveMessage();
       const res = await apiFetch(API+'/messages/'+currentMessage.id+'/schedules', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ scheduled_at: dt.toISOString() })
