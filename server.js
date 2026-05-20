@@ -60,10 +60,45 @@ try {
   if (!cols.includes("sent")) db.exec("ALTER TABLE schedules ADD COLUMN sent INTEGER NOT NULL DEFAULT 0");
 } catch (_) {}
 
+try {
+  const colInfo = db.prepare("PRAGMA table_info(schedules)").all();
+  const hasCron = colInfo.find(c => c.name === "cron_expression" && c.notnull === 1);
+  if (hasCron) {
+    db.exec("BEGIN");
+    db.exec(`
+      CREATE TABLE schedules_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER NOT NULL,
+        scheduled_at TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        sent INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+      )
+    `);
+    db.exec("INSERT INTO schedules_v2 (id,message_id,enabled,created_at,updated_at,scheduled_at,sent) SELECT id,message_id,enabled,created_at,updated_at,scheduled_at,sent FROM schedules");
+    db.exec("DROP TABLE schedules");
+    db.exec("ALTER TABLE schedules_v2 RENAME TO schedules");
+    db.exec("COMMIT");
+  }
+} catch (_) {}
+
+try {
+  db.prepare(
+    "UPDATE schedules SET scheduled_at = REPLACE(scheduled_at, 'T', ' ') " +
+    "WHERE scheduled_at LIKE '%T%'"
+  ).run();
+} catch (_) {}
+
 app.use(express.json());
 app.use("/api", authMiddleware);
 const upload = multer({ dest: path.join(__dirname, "uploads"), limits: { fileSize: 10 * 1024 * 1024 } });
 app.use(express.static(path.join(__dirname, "public")));
+
+function toDbDatetime(date) {
+  return date.toISOString().replace("T", " ").slice(0, 19);
+}
 
 async function sendToWechatBot(message) {
   if (!WEBHOOK_URL) throw new Error("WEBHOOK_KEY not configured");
@@ -134,7 +169,7 @@ app.post("/api/messages/:id/schedules", (req, res) => {
   if (!db.prepare("SELECT id FROM messages WHERE id=?").get(req.params.id))
     return res.status(404).json({ error: "Message not found" });
   const r = db.prepare("INSERT INTO schedules (message_id, scheduled_at) VALUES (?,?)")
-    .run(req.params.id, dt.toISOString());
+    .run(req.params.id, toDbDatetime(dt));
   res.status(201).json(db.prepare("SELECT * FROM schedules WHERE id=?").get(r.lastInsertRowid));
 });
 app.put("/api/schedules/:id", (req, res) => {
@@ -145,7 +180,7 @@ app.put("/api/schedules/:id", (req, res) => {
     const dt = new Date(scheduled_at);
     if (isNaN(dt.getTime())) return res.status(400).json({ error: "Invalid datetime" });
     db.prepare("UPDATE schedules SET scheduled_at=?, sent=0, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-      .run(dt.toISOString(), req.params.id);
+      .run(toDbDatetime(dt), req.params.id);
   }
   if (enabled !== undefined)
     db.prepare("UPDATE schedules SET enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -200,11 +235,16 @@ let pr = false;
 function checkSchedules() {
   if (pr) return;
   pr = true;
-  const ms = (60 - new Date().getSeconds()) * 1000;
+  const sec = new Date().getSeconds();
+  const ms = ((60 - sec) % 60) * 1000;
   setTimeout(() => {
     pr = false;
     try {
-      const due = db.prepare("SELECT s.* FROM schedules s JOIN messages m ON s.message_id=m.id WHERE s.enabled=1 AND s.sent=0 AND s.scheduled_at <= datetime('now')").all();
+      const due = db.prepare(
+        "SELECT s.* FROM schedules s JOIN messages m ON s.message_id=m.id " +
+        "WHERE s.enabled=1 AND s.sent=0 AND " +
+        "substr(REPLACE(s.scheduled_at, 'T', ' '), 1, 19) <= datetime('now')"
+      ).all();
       due.forEach(s => {
         const m = db.prepare("SELECT * FROM messages WHERE id=?").get(s.message_id);
         if (!m) return;

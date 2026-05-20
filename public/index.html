@@ -378,16 +378,21 @@ async function loadSchedules() {
   `).join('');
 }
 
-function formatDateTime(iso) {
+    function parseDbDate(str) {
+      if (!str) return new Date(NaN);
+      if (str.includes("T")) return new Date(str);
+      return new Date(str.replace(" ","T") + "Z");
+    }
+    function formatDateTime(iso) {
   if (!iso) return '未设置';
-  const d = new Date(iso);
+  const d = parseDbDate(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 function getStatusText(s) {
   if (s.sent) return '\u2714 已发送';
   if (!s.enabled) return '\u23f8 已停用';
-  const d = new Date(s.scheduled_at);
+  const d = parseDbDate(s.scheduled_at);
   if (d <= new Date()) return '\u23f3 待发送';
   return '\u231b 等待中';
 }
